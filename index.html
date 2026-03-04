@@ -161,7 +161,7 @@
             flex-wrap: wrap; overflow-y: scroll;
         }
         .profile-left { width: 50%; height: 100%; background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; position: relative; }
-        .profile-right { width: 50%; padding: 30px; box-sizing: border-box; }
+        .profile-right { width: 50%; padding: 30px; box-sizing: border-box; position: relative; }
         .edit-icon { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border: 1px solid currentColor; font-size: 0.7rem; margin-left: 10px; cursor: pointer; font-weight: bold; }
 
         .sub-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--crimson); border: 2px solid var(--gold); padding: 30px; z-index: 3000; display: none; text-align: center; }
@@ -265,15 +265,17 @@
 </div>
 
 <div id="profile-modal">
-    <div class="profile-left" id="prof-img-box"><div id="upload-placeholder" style="cursor:pointer;">Upload Image</div></div>
+    <div class="profile-left" id="prof-img-box"><div id="upload-placeholder">Upload Image</div></div>
     <div class="profile-right">
         <div style="font-size:1.5rem; cursor:pointer; position:absolute; top:10px; left:10px; font-weight:bold; color:red; line-height:1;" id="close-profile">X</div>
+        <div style="font-size:0.8rem; cursor:pointer; position:absolute; top:10px; right:15px; font-weight:bold; font-style:italic;" id="logout-btn">Logout</div>
+        
         <div style="font-size:2rem; font-weight:bold;" id="prof-name">Name</div>
         <div id="prof-name-underline" style="height:2px; margin-top:2px; margin-bottom:10px;"></div>
         <div id="prof-rank" style="font-style:italic; margin-bottom:5px;">Rank</div>
         <div id="prof-div" style="margin-bottom:20px;">Division</div>
         <div id="prof-pronouns" style="font-style:italic; margin-bottom:15px;">Pronouns</div>
-        <div id="prof-bio" style="font-size:0.9rem; line-height:1.4; max-height:150px; overflow-y:scroll;">Bio</div>
+        <div id="prof-bio" style="font-size:0.9rem; line-height:1.4; max-height:150px; overflow-y:auto;">Bio</div>
     </div>
 </div>
 
@@ -324,7 +326,6 @@
         }
     };
 
-    // TABS FIX
     const tabs = ["accounts", "bans", "chats"];
     tabs.forEach(t => {
         document.getElementById(`tab-${t}`).onclick = () => {
@@ -335,7 +336,6 @@
         };
     });
 
-    // BANNING FIX
     window.requestBan = async (u) => {
         if (!currentUser || getWeight(currentUser.rank) < 4) return;
         const banRef = push(ref(db, 'bans'));
@@ -376,7 +376,6 @@
         }
     };
 
-    // PROFILE EDITOR
     function attachEditor(userObj, field, displayElement) {
         const editIcon = document.createElement('span');
         editIcon.className = 'edit-icon'; editIcon.innerText = 'E';
@@ -399,7 +398,6 @@
         };
     }
 
-    // DATABASE SYNC
     onValue(ref(db, 'users'), (snapshot) => {
         const data = snapshot.val();
         allUsers = [];
@@ -460,7 +458,6 @@
         }
     }
 
-    // CHATROOMS
     document.getElementById('do-create-room').onclick = async () => {
         const pass = strictSanitize(document.getElementById('join-pass').value);
         if (!pass) { alert("Room password required."); return; }
@@ -504,7 +501,6 @@
 
     document.getElementById('chat-back').onclick = () => { currentRoomId = null; document.getElementById('chat-lobby').style.display = 'block'; document.getElementById('chat-room').style.display = 'none'; };
 
-    // AUTH
     function loginSession(un, data) {
         currentUser = { username: un, ...data };
         localStorage.setItem('thumb_user', un);
@@ -528,7 +524,12 @@
         alert("Account Created."); closeAuth();
     };
 
-    // PROFILES
+    // LOGOUT LOGIC
+    document.getElementById('logout-btn').onclick = () => {
+        localStorage.removeItem('thumb_user');
+        window.location.reload();
+    };
+
     window.openProfile = async (un) => {
         const snap = await get(ref(db, `users/${un}`)); const user = snap.val(); user.username = un;
         const theme = getColorTheme(user.finger); const modal = document.getElementById('profile-modal');
@@ -541,11 +542,17 @@
         document.getElementById('prof-bio').innerText = user.bio || "No biography provided.";
         const imgBox = document.getElementById('prof-img-box'); imgBox.style.backgroundImage = user.image ? `url(${user.image})` : "none";
         imgBox.innerHTML = user.image ? "" : `<div id="upload-placeholder">Upload Image</div>`;
+        
+        // Remove old click listeners
+        imgBox.onclick = null;
+        
         if (currentUser && currentUser.username === un) {
             attachEditor(user, "display_name", document.getElementById('prof-name'));
             attachEditor(user, "bio", document.getElementById('prof-bio'));
             attachEditor(user, "pronouns", document.getElementById('prof-pronouns'));
             if(user.finger !== "Pinky") attachEditor(user, "division", document.getElementById('prof-div'));
+            
+            // Image upload only triggered by click when on own profile
             imgBox.onclick = () => document.getElementById('image-upload-input').click();
         }
     };
@@ -559,7 +566,6 @@
         reader.readAsDataURL(file);
     };
 
-    // MGMT
     window.loadManagement = () => {
         closeAuth(); const body = document.getElementById('mgmt-body'); body.innerHTML = "";
         const myW = getWeight(currentUser.rank);
@@ -575,10 +581,8 @@
         document.getElementById('mgmt-panel').style.display = 'block';
     };
 
-    // SEARCH
     document.getElementById('search-input').oninput = renderList;
 
-    // UI UTILS
     window.closeAuth = () => { document.querySelectorAll('.auth-panel').forEach(p => p.style.display = 'none'); document.getElementById('fingers-menu').style.display = 'none'; };
     window.showProfile = () => { closeAuth(); if(currentUser) openProfile(currentUser.username); };
     document.getElementById('signup-trigger').onclick = () => { closeAuth(); document.getElementById('register-panel').style.display='block'; };
