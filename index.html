@@ -189,10 +189,6 @@
         <button class="nav-link" id="login-trigger">Log in</button>
     </div>
 
-    <img src="TheThumbIcon.png" alt="Thumb" class="thumb-icon">
-    <h1>The Thumb</h1>
-    <div style="text-align: center; font-style: italic;">La vanità del Soldato, la gloria della famiglia.</div>
-    
     <div id="auth-area">
         <div id="register-panel" class="auth-panel">
             <input type="text" id="regDisplay" placeholder="Display Name" class="formal-input">
@@ -223,13 +219,12 @@
             </table>
             <div class="bold-btn" onclick="closeAuth()">Close</div>
         </div>
-        <div id="user-info-panel" class="auth-panel">
-            <div id="my-info-content"></div>
-            <div class="bold-btn" onclick="closeAuth()">Collapse</div>
-            <div class="bold-btn" id="doLogout" style="color:#ff4d4d;">Log out</div>
-        </div>
     </div>
 
+    <img src="TheThumbIcon.png" alt="Thumb" class="thumb-icon">
+    <h1>The Thumb</h1>
+    <div style="text-align: center; font-style: italic;">La vanità del Soldato, la gloria della famiglia.</div>
+    
     <div class="gold-line"></div>
 
     <div class="tab-container">
@@ -329,8 +324,19 @@
         }
     };
 
-    // BAN LOGIC
-    async function requestBan(u) {
+    // TABS FIX
+    const tabs = ["accounts", "bans", "chats"];
+    tabs.forEach(t => {
+        document.getElementById(`tab-${t}`).onclick = () => {
+            tabs.forEach(id => {
+                document.getElementById(`view-${id}`).style.display = (id === t ? 'block' : 'none');
+                document.getElementById(`tab-${id}`).classList.toggle('active', id === t);
+            });
+        };
+    });
+
+    // BANNING FIX
+    window.requestBan = async (u) => {
         if (!currentUser || getWeight(currentUser.rank) < 4) return;
         const banRef = push(ref(db, 'bans'));
         await set(banRef, {
@@ -342,10 +348,10 @@
             resolved: false,
             votes: {}
         });
-        alert(`Ban request for ${u.display_name} submitted.`);
-    }
+        alert(`Request to ban ${u.display_name} sent to feed.`);
+    };
 
-    async function changeRank(u, direction) {
+    window.changeRank = async (u, direction) => {
         const ranks = {
             "Index": ["Proselyte", "Proxy", "Messenger"],
             "Ring": ["Student", "Docente", "Maestro", "Lord"],
@@ -354,23 +360,43 @@
             "Thumb": ["Soldato", "Capo", "Sottocapo"]
         };
         const list = ranks[u.finger];
-        let currentBase = u.rank;
-        if(u.finger === "Middle") currentBase = u.rank.replace("Brother", "Sibling").replace("Sister", "Sibling");
-        
+        let currentBase = u.rank.replace("Brother", "Sibling").replace("Sister", "Sibling");
         let idx = list.indexOf(currentBase);
         let newIdx = idx + direction;
-        if (newIdx < 0 || newIdx >= list.length) return;
-
-        let newRank = list[newIdx];
-        if(u.finger === "Middle") {
-            if(u.pronouns === "He/Him") newRank = newRank.replace("Sibling", "Brother");
-            else if(u.pronouns === "She/Her") newRank = newRank.replace("Sibling", "Sister");
+        if (newIdx >= 0 && newIdx < list.length) {
+            let newRank = list[newIdx];
+            if(u.finger === "Middle") {
+                if(u.pronouns === "He/Him") newRank = newRank.replace("Sibling", "Brother");
+                else if(u.pronouns === "She/Her") newRank = newRank.replace("Sibling", "Sister");
+            }
+            const history = u.promotion_history || [];
+            history.push(`${direction > 0 ? 'Promoted' : 'Demoted'} to ${newRank}`);
+            await update(ref(db, `users/${u.username}`), { rank: newRank, promotion_history: history });
+            window.loadManagement();
         }
+    };
 
-        const history = u.promotion_history || [];
-        history.push(`${direction > 0 ? 'Promoted' : 'Demoted'} to ${newRank}`);
-        await update(ref(db, `users/${u.username}`), { rank: newRank, promotion_history: history });
-        window.loadManagement();
+    // PROFILE EDITOR
+    function attachEditor(userObj, field, displayElement) {
+        const editIcon = document.createElement('span');
+        editIcon.className = 'edit-icon'; editIcon.innerText = 'E';
+        displayElement.appendChild(editIcon);
+        editIcon.onclick = (e) => {
+            e.stopPropagation();
+            const modal = document.getElementById('editor-modal');
+            const container = document.getElementById('edit-container');
+            document.getElementById('edit-title').innerText = `Edit ${field.replace('_', ' ')}`;
+            container.innerHTML = field === "bio" ? `<textarea id="edit-val" class="formal-input" style="width:100%; height:100px;">${userObj[field]}</textarea>` : `<input type="text" id="edit-val" class="formal-input" value="${userObj[field]}">`;
+            modal.style.display = 'block';
+            document.getElementById('save-edit').onclick = async () => {
+                const newVal = strictSanitize(document.getElementById('edit-val').value);
+                const updates = {}; updates[field] = newVal;
+                await update(ref(db, `users/${userObj.username}`), updates);
+                modal.style.display = 'none';
+                openProfile(userObj.username);
+            };
+            document.getElementById('cancel-edit').onclick = () => modal.style.display = 'none';
+        };
     }
 
     // DATABASE SYNC
@@ -382,87 +408,39 @@
             allUsers.push({ username: id, ...data[id] });
             if (counts[data[id].finger] !== undefined) counts[data[id].finger]++;
         }
-        renderList();
-        renderPopulation(counts);
-
+        renderList(); renderPopulation(counts);
         const savedUn = localStorage.getItem('thumb_user');
-        if (savedUn && data[savedUn] && !currentUser) {
-            loginSession(savedUn, data[savedUn]);
-        } else if (currentUser && data[currentUser.username]) {
-            currentUser = { username: currentUser.username, ...data[currentUser.username] };
-        }
+        if (savedUn && data[savedUn] && !currentUser) loginSession(savedUn, data[savedUn]);
     });
 
     function renderPopulation(counts) {
         const div = document.getElementById('population-counter');
         const total = Object.values(counts).reduce((a, b) => a + b, 0);
-        div.innerHTML = `
-            <div style="font-style:italic; color:var(--gold); margin-bottom:10px;">Accounts</div>
-            ${Object.keys(counts).map(f => `
-                <div class="pop-row"><span class="pop-label">The ${f}:</span><span class="pop-val">(${counts[f]})</span></div>
-            `).join('')}
-            <div class="pop-row" style="margin-top:5px;"><span class="pop-label">Total:</span><span class="pop-val">(${total})</span></div>
-        `;
+        div.innerHTML = `<div style="font-style:italic; color:var(--gold); margin-bottom:10px;">Accounts</div>` + Object.keys(counts).map(f => `<div class="pop-row"><span class="pop-label">The ${f}:</span><span class="pop-val">(${counts[f]})</span></div>`).join('') + `<div class="pop-row" style="margin-top:5px;"><span class="pop-label">Total:</span><span class="pop-val">(${total})</span></div>`;
     }
 
     function renderList() {
         const filter = document.getElementById('search-input').value.toLowerCase();
-        const listDiv = document.getElementById('registry-list');
-        listDiv.innerHTML = "";
-        const sorted = [...allUsers].sort((a, b) => getWeight(b.rank) - getWeight(a.rank) || a.display_name.localeCompare(b.display_name));
-
+        const listDiv = document.getElementById('registry-list'); listDiv.innerHTML = "";
+        const sorted = [...allUsers].sort((a, b) => getWeight(b.rank) - getWeight(a.rank));
         sorted.forEach(u => {
             if (filter && !(u.display_name.toLowerCase().includes(filter) || u.rank.toLowerCase().includes(filter) || u.finger.toLowerCase().includes(filter))) return;
-            const entry = document.createElement('div');
-            entry.className = 'registry-entry';
+            const entry = document.createElement('div'); entry.className = 'registry-entry';
             const historyHtml = u.promotion_history ? u.promotion_history.slice().reverse().map(h => `<div style="text-align:center; opacity:0.6; font-size:0.8rem;">${h}</div>`).join('') : '<div class="no-history">No history</div>';
-
-            entry.innerHTML = `
-                <div class="entry-header">
-                    <span style="flex-grow: 1;">${u.display_name}</span>
-                    <span style="font-style:italic; opacity:0.8;">${u.rank} of the ${u.finger}</span>
-                    <span class="status-symbol">+</span>
-                </div>
-                <div class="details">
-                    <div class="detail-row"><span class="detail-field-label">Name</span><span>${u.display_name}</span></div>
-                    <div class="detail-row"><span class="detail-field-label">Finger</span><span>${u.finger}</span></div>
-                    <div style="text-align:center; margin-top:10px;">
-                        <span class="nav-link" style="text-decoration:underline;" onclick="openProfile('${u.username}')"><i>View personal page</i></span>
-                    </div>
-                    <div class="history-title">HISTORY</div>
-                    ${historyHtml}
-                </div>
-            `;
-            const h = entry.querySelector('.entry-header');
-            const d = entry.querySelector('.details');
-            const s = entry.querySelector('.status-symbol');
-            h.onclick = () => {
-                const isH = (d.style.display === 'none' || d.style.display === '');
-                d.style.display = isH ? 'block' : 'none';
-                s.innerText = isH ? '-' : '+';
-            };
+            entry.innerHTML = `<div class="entry-header"><span style="flex-grow: 1;">${u.display_name}</span><span style="font-style:italic; opacity:0.8;">${u.rank} of the ${u.finger}</span><span class="status-symbol">+</span></div><div class="details"><div class="detail-row"><span class="detail-field-label">Name</span><span>${u.display_name}</span></div><div class="detail-row"><span class="detail-field-label">Finger</span><span>${u.finger}</span></div><div style="text-align:center; margin-top:10px;"><span class="nav-link" style="text-decoration:underline;" onclick="openProfile('${u.username}')"><i>View personal page</i></span></div><div class="history-title">HISTORY</div>${historyHtml}</div>`;
+            const h = entry.querySelector('.entry-header'), d = entry.querySelector('.details'), s = entry.querySelector('.status-symbol');
+            h.onclick = () => { const isH = (d.style.display === 'none' || d.style.display === ''); d.style.display = isH ? 'block' : 'none'; s.innerText = isH ? '-' : '+'; };
             listDiv.appendChild(entry);
         });
     }
 
     onValue(ref(db, 'bans'), snap => {
-        const list = document.getElementById('ban-feed-list');
-        list.innerHTML = "";
+        const list = document.getElementById('ban-feed-list'); list.innerHTML = "";
         snap.forEach(child => {
-            const b = child.val();
-            const id = child.key;
-            const div = document.createElement('div');
-            div.className = 'ban-item';
-            let banCount = 0, xCount = 0;
-            if(b.votes) Object.values(b.votes).forEach(v => v === "BAN" ? banCount++ : xCount++);
-            div.innerHTML = `
-                <div class="ban-req-by">Ban requested by: ${b.requestedBy}</div>
-                <div style="font-weight:bold;">${b.targetName}, ${b.targetRank} of the ${b.targetFinger}</div>
-                <div style="margin-top:10px;">
-                    <button class="action-btn" id="vb-${id}" ${b.resolved ? 'disabled' : ''}>BAN (${banCount})</button>
-                    <button class="action-btn" id="vx-${id}" ${b.resolved ? 'disabled' : ''}>X (${xCount})</button>
-                </div>
-            `;
+            const b = child.val(); const id = child.key;
+            const div = document.createElement('div'); div.className = 'ban-item';
+            let banCount = 0, xCount = 0; if(b.votes) Object.values(b.votes).forEach(v => v === "BAN" ? banCount++ : xCount++);
+            div.innerHTML = `<div class="ban-req-by">Ban requested by: ${b.requestedBy}</div><div style="font-weight:bold;">${b.targetName}, ${b.targetRank} of the ${b.targetFinger}</div><div style="margin-top:10px;"><button class="action-btn" id="vb-${id}" ${b.resolved ? 'disabled' : ''}>BAN (${banCount})</button><button class="action-btn" id="vx-${id}" ${b.resolved ? 'disabled' : ''}>X (${xCount})</button></div>`;
             div.querySelector(`#vb-${id}`).onclick = () => castVote(id, b, "BAN");
             div.querySelector(`#vx-${id}`).onclick = () => castVote(id, b, "X");
             list.appendChild(div);
@@ -472,87 +450,97 @@
     async function castVote(bid, bData, type) {
         if (!currentUser || getWeight(currentUser.rank) < 4) { alert("Insufficient Rank."); return; }
         if (bData.votes && bData.votes[currentUser.username]) { alert("Already voted."); return; }
-        const updates = {};
-        updates[`bans/${bid}/votes/${currentUser.username}`] = type;
+        const updates = {}; updates[`bans/${bid}/votes/${currentUser.username}`] = type;
         await update(ref(db), updates);
-        const newSnap = await get(ref(db, `bans/${bid}`));
-        const b = newSnap.val();
-        let banV = 0, xV = 0;
-        Object.values(b.votes).forEach(v => v === "BAN" ? banV++ : xV++);
+        const b = (await get(ref(db, `bans/${bid}`))).val();
+        let banV = 0, xV = 0; Object.values(b.votes).forEach(v => v === "BAN" ? banV++ : xV++);
         if (Math.abs(banV - xV) >= 2) {
-            const success = (banV > xV);
             await update(ref(db, `bans/${bid}`), { resolved: true });
-            if (success) await remove(ref(db, `users/${b.targetUn}`));
+            if (banV > xV) await remove(ref(db, `users/${b.targetUn}`));
         }
     }
 
-    // AUTH ACTIONS
+    // CHATROOMS
+    document.getElementById('do-create-room').onclick = async () => {
+        const pass = strictSanitize(document.getElementById('join-pass').value);
+        if (!pass) { alert("Room password required."); return; }
+        const newRoomRef = push(ref(db, 'chats'));
+        await set(newRoomRef, { password: pass, messages: {} });
+        joinRoom(newRoomRef.key);
+    };
+
+    document.getElementById('doJoin').onclick = async () => {
+        const pass = strictSanitize(document.getElementById('join-pass').value);
+        const snap = await get(ref(db, 'chats'));
+        let foundId = null;
+        snap.forEach(c => { if (c.val().password === pass) foundId = c.key; });
+        if (foundId) joinRoom(foundId); else alert("Invalid Room Passcode.");
+    };
+
+    function joinRoom(id) {
+        currentRoomId = id;
+        document.getElementById('chat-lobby').style.display = 'none';
+        document.getElementById('chat-room').style.display = 'block';
+        document.getElementById('room-code-display').innerText = `CODE: ${id.substring(1, 9)}`;
+        const mDiv = document.getElementById('chat-messages');
+        onValue(ref(db, `chats/${id}/messages`), snap => {
+            mDiv.innerHTML = "";
+            snap.forEach(msgSnap => {
+                const m = msgSnap.val();
+                const d = document.createElement('div'); d.className = 'chat-msg';
+                d.innerHTML = `<div class="chat-meta">${m.sender} [${m.finger}]</div><div class="chat-text">${m.text}</div>`;
+                mDiv.appendChild(d);
+            });
+            mDiv.scrollTop = mDiv.scrollHeight;
+        });
+    }
+
+    document.getElementById('chat-send').onclick = async () => {
+        const txt = strictSanitize(document.getElementById('chat-input').value);
+        if (!txt || !currentUser) return;
+        await push(ref(db, `chats/${currentRoomId}/messages`), { sender: currentUser.display_name, finger: currentUser.finger, text: txt });
+        document.getElementById('chat-input').value = "";
+    };
+
+    document.getElementById('chat-back').onclick = () => { currentRoomId = null; document.getElementById('chat-lobby').style.display = 'block'; document.getElementById('chat-room').style.display = 'none'; };
+
+    // AUTH
     function loginSession(un, data) {
         currentUser = { username: un, ...data };
         localStorage.setItem('thumb_user', un);
         closeAuth();
         const nav = document.getElementById('navigation-bar');
-        nav.innerHTML = `
-            <button class="nav-link" onclick="window.loadManagement()">Management</button>
-            <div style="position: relative;">
-                <button class="nav-link" id="fingers-trigger">Fingers</button>
-                <div id="fingers-menu">
-                    <a href="https://thering1.github.io/theindex.github.io" class="finger-btn btn-index"><img src="IndexProselytesIcon.png"> The Index</a>
-                    <a href="https://thering1.github.io/themiddle.github.io" class="finger-btn btn-middle"><img src="thethumb.png"> The Middle</a>
-                    <a href="https://thering1.github.io/thering.github.io" class="finger-btn btn-ring"><img src="The_Ring_Icon.png"> The Ring</a>
-                    <a href="https://thering1.github.io/thepinky.github.io" class="finger-btn btn-pinky"><img src="PMLogo.png"> THE PINKY</a>
-                </div>
-            </div>
-            <button class="nav-link" onclick="window.showProfile()">Profile</button>
-        `;
+        nav.innerHTML = `<button class="nav-link" onclick="window.loadManagement()">Management</button><div style="position: relative;"><button class="nav-link" id="fingers-trigger">Fingers</button><div id="fingers-menu"><a href="https://thering1.github.io/theindex.github.io" class="finger-btn btn-index"><img src="IndexProselytesIcon.png"> The Index</a><a href="https://thering1.github.io/themiddle.github.io" class="finger-btn btn-middle"><img src="thethumb.png"> The Middle</a><a href="https://thering1.github.io/thering.github.io" class="finger-btn btn-ring"><img src="The_Ring_Icon.png"> The Ring</a><a href="https://thering1.github.io/thepinky.github.io" class="finger-btn btn-pinky"><img src="PMLogo.png"> THE PINKY</a></div></div><button class="nav-link" onclick="window.showProfile()">Profile</button>`;
         document.getElementById('fingers-trigger').onclick = (e) => { e.stopPropagation(); const m = document.getElementById('fingers-menu'); m.style.display = (m.style.display === 'grid' ? 'none' : 'grid'); };
     }
 
     document.getElementById('doLogin').onclick = async () => {
-        const un = strictSanitize(document.getElementById('logUser').value);
-        const pw = document.getElementById('logPass').value;
+        const un = strictSanitize(document.getElementById('logUser').value), pw = document.getElementById('logPass').value;
         const snap = await get(ref(db, `users/${un}`));
-        if (snap.exists() && snap.val().password === pw) {
-            loginSession(un, snap.val());
-            showProfile();
-        } else alert("Access Denied.");
+        if (snap.exists() && snap.val().password === pw) { loginSession(un, snap.val()); showProfile(); } else alert("Access Denied.");
     };
 
     document.getElementById('doRegister').onclick = async () => {
-        const dn = strictSanitize(document.getElementById('regDisplay').value);
-        const un = strictSanitize(document.getElementById('regUser').value);
-        const pw = document.getElementById('regPass').value;
-        const org = document.getElementById('regOrg').value;
+        const dn = strictSanitize(document.getElementById('regDisplay').value), un = strictSanitize(document.getElementById('regUser').value), pw = document.getElementById('regPass').value, org = document.getElementById('regOrg').value;
         if (!dn || !un || !pw || !org) return;
         const startR = {"Index":"Proselyte", "Ring":"Student", "Middle":"Little Sibling", "Pinky":"Aspiring Star", "Thumb":"Soldato"}[org];
-        await set(ref(db, `users/${un}`), { 
-            display_name: dn, password: pw, finger: org, rank: startR, 
-            promotion_history: [`Initiated as ${startR}`], bio: "", pronouns: "They/Them", division: ""
-        });
+        await set(ref(db, `users/${un}`), { display_name: dn, password: pw, finger: org, rank: startR, promotion_history: [`Initiated as ${startR}`], bio: "", pronouns: "They/Them", division: "" });
         alert("Account Created."); closeAuth();
     };
 
-    document.getElementById('doLogout').onclick = () => { localStorage.removeItem('thumb_user'); location.reload(); };
-
-    // PROFILE PAGE & IMAGE UPLOAD
+    // PROFILES
     window.openProfile = async (un) => {
-        const snap = await get(ref(db, `users/${un}`));
-        const user = snap.val(); user.username = un;
-        const theme = getColorTheme(user.finger);
-        const modal = document.getElementById('profile-modal');
+        const snap = await get(ref(db, `users/${un}`)); const user = snap.val(); user.username = un;
+        const theme = getColorTheme(user.finger); const modal = document.getElementById('profile-modal');
         modal.style.display = 'flex'; modal.style.backgroundColor = theme.maj; modal.style.borderColor = theme.min; modal.style.color = theme.min;
-        
         document.getElementById('prof-name').innerText = user.display_name;
         document.getElementById('prof-name-underline').style.backgroundColor = theme.min;
         document.getElementById('prof-rank').innerText = `${user.rank} of the ${user.finger}`;
         document.getElementById('prof-div').innerText = user.division || "No Division";
         document.getElementById('prof-pronouns').innerText = user.pronouns || "No Pronouns Set";
         document.getElementById('prof-bio').innerText = user.bio || "No biography provided.";
-
-        const imgBox = document.getElementById('prof-img-box');
-        imgBox.style.backgroundImage = user.image ? `url(${user.image})` : "none";
+        const imgBox = document.getElementById('prof-img-box'); imgBox.style.backgroundImage = user.image ? `url(${user.image})` : "none";
         imgBox.innerHTML = user.image ? "" : `<div id="upload-placeholder">Upload Image</div>`;
-
         if (currentUser && currentUser.username === un) {
             attachEditor(user, "display_name", document.getElementById('prof-name'));
             attachEditor(user, "bio", document.getElementById('prof-bio'));
@@ -563,37 +551,34 @@
     };
 
     document.getElementById('image-upload-input').onchange = (e) => {
-        const file = e.target.files[0];
-        if(!file) return;
-        const reader = new FileReader();
-        reader.onload = async (event) => {
+        const file = e.target.files[0]; if(!file) return;
+        const reader = new FileReader(); reader.onload = async (event) => {
             const base64 = event.target.result;
-            if(currentUser) {
-                await update(ref(db, `users/${currentUser.username}`), { image: base64 });
-                openProfile(currentUser.username);
-            }
+            if(currentUser) { await update(ref(db, `users/${currentUser.username}`), { image: base64 }); openProfile(currentUser.username); }
         };
         reader.readAsDataURL(file);
     };
 
-    // UTILITY UI
+    // MGMT
     window.loadManagement = () => {
         closeAuth(); const body = document.getElementById('mgmt-body'); body.innerHTML = "";
         const myW = getWeight(currentUser.rank);
         allUsers.forEach(u => {
             if (u.finger === currentUser.finger && getWeight(u.rank) < myW && u.username !== currentUser.username) {
-                const row = document.createElement('tr');
-                row.innerHTML = `<td>${u.display_name}</td><td>${u.rank}</td><td id="act-${u.username}"></td>`;
-                body.appendChild(row);
-                const cell = document.getElementById(`act-${u.username}`);
-                const p = document.createElement('span'); p.className="action-btn"; p.innerText="Promote"; p.onclick=()=>changeRank(u,1); cell.appendChild(p);
-                const d = document.createElement('span'); d.className="action-btn"; d.innerText="Demote"; d.style.color="#ff4d4d"; d.onclick=()=>changeRank(u,-1); cell.appendChild(d);
-                if (myW >= 4) { const b = document.createElement('span'); b.className="action-btn"; b.innerText="BAN"; b.style.color="red"; b.onclick=()=>requestBan(u); cell.appendChild(b); }
+                const row = document.createElement('tr'); row.innerHTML = `<td>${u.display_name}</td><td>${u.rank}</td><td id="act-${u.username}"></td>`;
+                body.appendChild(row); const cell = document.getElementById(`act-${u.username}`);
+                const p = document.createElement('span'); p.className="action-btn"; p.innerText="Promote"; p.onclick=()=>window.changeRank(u,1); cell.appendChild(p);
+                const d = document.createElement('span'); d.className="action-btn"; d.innerText="Demote"; d.style.color="#ff4d4d"; d.onclick=()=>window.changeRank(u,-1); cell.appendChild(d);
+                if (myW >= 4) { const b = document.createElement('span'); b.className="action-btn"; b.innerText="BAN"; b.style.color="red"; b.onclick=()=>window.requestBan(u); cell.appendChild(b); }
             }
         });
         document.getElementById('mgmt-panel').style.display = 'block';
     };
 
+    // SEARCH
+    document.getElementById('search-input').oninput = renderList;
+
+    // UI UTILS
     window.closeAuth = () => { document.querySelectorAll('.auth-panel').forEach(p => p.style.display = 'none'); document.getElementById('fingers-menu').style.display = 'none'; };
     window.showProfile = () => { closeAuth(); if(currentUser) openProfile(currentUser.username); };
     document.getElementById('signup-trigger').onclick = () => { closeAuth(); document.getElementById('register-panel').style.display='block'; };
