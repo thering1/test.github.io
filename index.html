@@ -385,11 +385,34 @@
             const modal = document.getElementById('editor-modal');
             const container = document.getElementById('edit-container');
             document.getElementById('edit-title').innerText = `Edit ${field.replace('_', ' ')}`;
-            container.innerHTML = field === "bio" ? `<textarea id="edit-val" class="formal-input" style="width:100%; height:100px;">${userObj[field]}</textarea>` : `<input type="text" id="edit-val" class="formal-input" value="${userObj[field]}">`;
+            
+            if (field === "bio") {
+                container.innerHTML = `<textarea id="edit-val" class="formal-input" style="width:100%; height:100px;">${userObj[field]}</textarea>`;
+            } else if (field === "pronouns") {
+                container.innerHTML = `<select id="edit-val" class="formal-input">
+                    <option value="He/Him" ${userObj[field] === "He/Him" ? "selected" : ""}>He/Him</option>
+                    <option value="She/Her" ${userObj[field] === "She/Her" ? "selected" : ""}>She/Her</option>
+                    <option value="They/Them" ${userObj[field] === "They/Them" ? "selected" : ""}>They/Them</option>
+                </select>`;
+            } else {
+                container.innerHTML = `<input type="text" id="edit-val" class="formal-input" value="${userObj[field]}">`;
+            }
+            
             modal.style.display = 'block';
             document.getElementById('save-edit').onclick = async () => {
                 const newVal = strictSanitize(document.getElementById('edit-val').value);
-                const updates = {}; updates[field] = newVal;
+                const updates = {}; 
+                updates[field] = newVal;
+
+                // SPECIAL MIDDLE LOGIC: Sync rank with pronouns
+                if (field === "pronouns" && userObj.finger === "Middle") {
+                    let currentRank = userObj.rank;
+                    if (newVal === "He/Him") currentRank = currentRank.replace("Sister", "Brother").replace("Sibling", "Brother");
+                    else if (newVal === "She/Her") currentRank = currentRank.replace("Brother", "Sister").replace("Sibling", "Sister");
+                    else if (newVal === "They/Them") currentRank = currentRank.replace("Brother", "Sibling").replace("Sister", "Sibling");
+                    updates["rank"] = currentRank;
+                }
+
                 await update(ref(db, `users/${userObj.username}`), updates);
                 modal.style.display = 'none';
                 openProfile(userObj.username);
@@ -525,7 +548,6 @@
         const dn = strictSanitize(document.getElementById('regDisplay').value), un = strictSanitize(document.getElementById('regUser').value), pw = document.getElementById('regPass').value, org = document.getElementById('regOrg').value;
         if (!dn || !un || !pw || !org) return;
         
-        // UNIQUE IDENTITY CHECK
         const snap = await get(ref(db, 'users'));
         const users = snap.val() || {};
         for (let key in users) {
@@ -546,7 +568,7 @@
         };
         await set(ref(db, `users/${un}`), newUser);
         alert("Account Created."); 
-        loginSession(un, newUser); // AUTO LOG IN
+        loginSession(un, newUser);
         showProfile();
     };
 
