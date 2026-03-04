@@ -340,7 +340,7 @@
         if (!currentUser || getWeight(currentUser.rank) < 4) return;
         const banRef = push(ref(db, 'bans'));
         await set(banRef, {
-            requestedBy: `${currentUser.display_name} (${currentUser.rank})`,
+            requestedBy: `${currentUser.display_name}, ${currentUser.rank} of the ${currentUser.finger}`,
             targetUn: u.username,
             targetName: u.display_name,
             targetRank: u.rank,
@@ -485,7 +485,7 @@
             snap.forEach(msgSnap => {
                 const m = msgSnap.val();
                 const d = document.createElement('div'); d.className = 'chat-msg';
-                d.innerHTML = `<div class="chat-meta">${m.sender} [${m.finger}]</div><div class="chat-text">${m.text}</div>`;
+                d.innerHTML = `<div class="chat-meta">${m.sender}, ${m.rank} of the ${m.finger}</div><div class="chat-text">${m.text}</div>`;
                 mDiv.appendChild(d);
             });
             mDiv.scrollTop = mDiv.scrollHeight;
@@ -495,7 +495,12 @@
     document.getElementById('chat-send').onclick = async () => {
         const txt = strictSanitize(document.getElementById('chat-input').value);
         if (!txt || !currentUser) return;
-        await push(ref(db, `chats/${currentRoomId}/messages`), { sender: currentUser.display_name, finger: currentUser.finger, text: txt });
+        await push(ref(db, `chats/${currentRoomId}/messages`), { 
+            sender: currentUser.display_name, 
+            rank: currentUser.rank,
+            finger: currentUser.finger, 
+            text: txt 
+        });
         document.getElementById('chat-input').value = "";
     };
 
@@ -519,12 +524,32 @@
     document.getElementById('doRegister').onclick = async () => {
         const dn = strictSanitize(document.getElementById('regDisplay').value), un = strictSanitize(document.getElementById('regUser').value), pw = document.getElementById('regPass').value, org = document.getElementById('regOrg').value;
         if (!dn || !un || !pw || !org) return;
+        
+        // UNIQUE IDENTITY CHECK
+        const snap = await get(ref(db, 'users'));
+        const users = snap.val() || {};
+        for (let key in users) {
+            if (key.toLowerCase() === un.toLowerCase()) { alert("Username already taken."); return; }
+            if (users[key].display_name.toLowerCase() === dn.toLowerCase()) { alert("Display Name already taken."); return; }
+        }
+
         const startR = {"Index":"Proselyte", "Ring":"Student", "Middle":"Little Sibling", "Pinky":"Aspiring Star", "Thumb":"Soldato"}[org];
-        await set(ref(db, `users/${un}`), { display_name: dn, password: pw, finger: org, rank: startR, promotion_history: [`Initiated as ${startR}`], bio: "", pronouns: "They/Them", division: "" });
-        alert("Account Created."); closeAuth();
+        const newUser = { 
+            display_name: dn, 
+            password: pw, 
+            finger: org, 
+            rank: startR, 
+            promotion_history: [`Initiated as ${startR}`], 
+            bio: "", 
+            pronouns: "They/Them", 
+            division: "" 
+        };
+        await set(ref(db, `users/${un}`), newUser);
+        alert("Account Created."); 
+        loginSession(un, newUser); // AUTO LOG IN
+        showProfile();
     };
 
-    // LOGOUT LOGIC
     document.getElementById('logout-btn').onclick = () => {
         localStorage.removeItem('thumb_user');
         window.location.reload();
@@ -542,17 +567,12 @@
         document.getElementById('prof-bio').innerText = user.bio || "No biography provided.";
         const imgBox = document.getElementById('prof-img-box'); imgBox.style.backgroundImage = user.image ? `url(${user.image})` : "none";
         imgBox.innerHTML = user.image ? "" : `<div id="upload-placeholder">Upload Image</div>`;
-        
-        // Remove old click listeners
         imgBox.onclick = null;
-        
         if (currentUser && currentUser.username === un) {
             attachEditor(user, "display_name", document.getElementById('prof-name'));
             attachEditor(user, "bio", document.getElementById('prof-bio'));
             attachEditor(user, "pronouns", document.getElementById('prof-pronouns'));
             if(user.finger !== "Pinky") attachEditor(user, "division", document.getElementById('prof-div'));
-            
-            // Image upload only triggered by click when on own profile
             imgBox.onclick = () => document.getElementById('image-upload-input').click();
         }
     };
@@ -582,14 +602,12 @@
     };
 
     document.getElementById('search-input').oninput = renderList;
-
     window.closeAuth = () => { document.querySelectorAll('.auth-panel').forEach(p => p.style.display = 'none'); document.getElementById('fingers-menu').style.display = 'none'; };
     window.showProfile = () => { closeAuth(); if(currentUser) openProfile(currentUser.username); };
     document.getElementById('signup-trigger').onclick = () => { closeAuth(); document.getElementById('register-panel').style.display='block'; };
     document.getElementById('login-trigger').onclick = () => { closeAuth(); document.getElementById('login-panel').style.display='block'; };
     document.getElementById('close-profile').onclick = () => document.getElementById('profile-modal').style.display = 'none';
     document.getElementById('fingers-trigger').onclick = (e) => { e.stopPropagation(); const m = document.getElementById('fingers-menu'); m.style.display = (m.style.display === 'grid' ? 'none' : 'grid'); };
-
 </script>
 </body>
 </html>
